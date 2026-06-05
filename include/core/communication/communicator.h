@@ -20,6 +20,7 @@ class Communicator {
     PartyID currentId;
 
     size_t bytes_sent = 0;
+    size_t comm_rounds = 0;
 
    public:
     /**
@@ -30,7 +31,8 @@ class Communicator {
 
     virtual ~Communicator() {}
 
-    size_t getBytesSent() const { return bytes_sent; }
+    [[nodiscard]] size_t getBytesSent() const { return bytes_sent; }
+    [[nodiscard]] size_t getCommunicationRounds() const { return comm_rounds; }
 
     /////////////////////////////////
     /// Peer to Peer Communication //
