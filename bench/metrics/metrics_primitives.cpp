@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "orq.h"
+#include "util.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-value"
@@ -13,78 +14,94 @@ using namespace std::chrono;
 
 using namespace COMPILED_MPC_PROTOCOL_NAMESPACE;
 
-// Boolean shares (`BSharedVector<T>`) support: &, |, ^, !, ~, ==, >, <, >=, <=, +, -, b2a()
-// Arithmetic shares (`ASharedVector<T>`) support: +, -, *, dot_product(), a2b()
-
-size_t get_communication_rounds();
 template <typename T>
-void print_comm_rounds_bool(size_t size);
+void count_comm_rounds_bool(size_t size);
 template <typename T>
-void print_comm_rounds_arith(size_t size);
-template <typename Func>
-void print_time_elapsed(const std::string& name, Func&& function);
+void count_comm_rounds_arith(size_t size);
+// runtime benchmarks
 template <typename T>
 void benchmark_bool(size_t size);
 template <typename T>
 void benchmark_arith(size_t size);
+// test functions
+void run_simple_test();
+void run_comm_rounds_test();
+void run_benchmark_test();
 
 int main(const int argc, char** argv) {
     orq_init(argc, argv);
-    if (argc >= 5) {
-        single_cout("Test size input is ignored");
-    }
+    // size_t test_size = 128;
+    // if (argc >= 5) {
+    //     test_size = atoi(argv[4]);
+    // }
 
-    constexpr size_t min_exp = 10;
-    constexpr size_t max_exp = 22;
-
-    // Communication rounds
-    for (size_t exp = min_exp; exp <= max_exp; exp++) {
-        const size_t test_size = 1 << exp;
-        print_comm_rounds_bool<int8_t>(test_size);
-        print_comm_rounds_bool<int16_t>(test_size);
-        print_comm_rounds_bool<int32_t>(test_size);
-        print_comm_rounds_bool<int64_t>(test_size);
-    }
-    for (size_t exp = min_exp; exp <= max_exp; exp++) {
-        const size_t test_size = 1 << exp;
-        print_comm_rounds_arith<int8_t>(test_size);
-        print_comm_rounds_arith<int16_t>(test_size);
-        print_comm_rounds_arith<int32_t>(test_size);
-        print_comm_rounds_arith<int64_t>(test_size);
-    }
-    // Runtimes
-    for (size_t exp = min_exp; exp <= max_exp; exp++) {
-        const size_t test_size = 1 << exp;
-        benchmark_bool<int8_t>(test_size);
-        benchmark_bool<int16_t>(test_size);
-        benchmark_bool<int32_t>(test_size);
-        benchmark_bool<int64_t>(test_size);
-    }
-    for (size_t exp = min_exp; exp <= max_exp; exp++) {
-        const size_t test_size = 1 << exp;
-        benchmark_arith<int8_t>(test_size);
-        benchmark_arith<int16_t>(test_size);
-        benchmark_arith<int32_t>(test_size);
-        benchmark_arith<int64_t>(test_size);
-    }
+    run_comm_rounds_test();
 
     return 0;
 }
 
-size_t get_communication_rounds() { return runTime->get_communicator()->getCommunicationRounds(); }
 
-template <typename Func>
-void print_comm_rounds(const std::string& name, Func&& function) {
-    const size_t before = get_communication_rounds();
-    std::invoke(std::forward<Func>(function));
-    const size_t after = get_communication_rounds();
-    single_cout(std::setw(10) << std::left << name << " took " << std::setfill('0') << std::setw(2)
-                              << (after - before) << " rounds");
+void run_benchmark_test() {
+
+    constexpr size_t min_exp = 25;
+    constexpr size_t max_exp = 25;
+
+    const auto local_iterate = [&](const std::function<void(const size_t&)>& func) {
+        iterate(min_exp, max_exp, func);
+    };
+
+    // Runtimes of operations on boolean shares
+    local_iterate(benchmark_bool<int8_t>);
+    local_iterate(benchmark_bool<int16_t>);
+    local_iterate(benchmark_bool<int32_t>);
+    local_iterate(benchmark_bool<int64_t>);
+
+    // Runtimes of operations on arithmetic shares
+    local_iterate(benchmark_arith<int8_t>);
+    local_iterate(benchmark_arith<int16_t>);
+    local_iterate(benchmark_arith<int32_t>);
+    local_iterate(benchmark_arith<int64_t>);
+}
+
+void run_comm_rounds_test() {
+
+    constexpr size_t min_exp = 7;
+    constexpr size_t max_exp = 7;
+
+    const auto local_iterate = [&](const std::function<void(const size_t&)>& func) {
+        iterate(min_exp, max_exp, func);
+    };
+
+    // Communication rounds of operations on boolean shares
+    local_iterate(count_comm_rounds_bool<int8_t>);
+    local_iterate(count_comm_rounds_bool<int16_t>);
+    local_iterate(count_comm_rounds_bool<int32_t>);
+    local_iterate(count_comm_rounds_bool<int64_t>);
+
+    // Communication round of operations on arithmetic shares
+    local_iterate(count_comm_rounds_arith<int8_t>);
+    local_iterate(count_comm_rounds_arith<int16_t>);
+    local_iterate(count_comm_rounds_arith<int32_t>);
+    local_iterate(count_comm_rounds_arith<int64_t>);
+}
+
+void run_simple_test() {
+    constexpr size_t min_exp = 10;
+    constexpr size_t max_exp = 22;
+
+    iterate(min_exp, max_exp,
+            [](const size_t& size) {
+                BSharedVector<int8_t> a(size), b(size);
+                single_cout(std::endl
+                            << "Boolean vector " << size << " x "
+                            << std::numeric_limits<std::make_unsigned_t<int8_t>>::digits << "b");
+                print_comm_rounds("AND", [&] { static_cast<void>(a & b); });
+            });
 }
 
 template <typename T>
-void print_comm_rounds_bool(const size_t size) {
-    //~ Operations on boolean shares
+void count_comm_rounds_bool(size_t size) {
+    // Operations on boolean shares
     BSharedVector<T> a(size), b(size);
 
     single_cout(std::endl
@@ -92,101 +109,60 @@ void print_comm_rounds_bool(const size_t size) {
                 << std::numeric_limits<std::make_unsigned_t<T>>::digits << "b");
 
     //~ Boolean operations
-    print_comm_rounds("AND", [&] { a & b; });
-    print_comm_rounds("OR", [&] { a | b; });
-    print_comm_rounds("XOR", [&] { a ^ b; });
-    print_comm_rounds("NEG", [&] { !a; });
-    print_comm_rounds("COMPL", [&] { ~a; });
-    //~ Equality & Inequality
-    print_comm_rounds("EQ", [&] { a == b; });
-    print_comm_rounds("NEQ", [&] { a != b; });
-    //~ Comparison operations
-    print_comm_rounds("GR", [&] { a > b; });
-    print_comm_rounds("GE", [&] { a >= b; });
-    //~ Arithmetical operations
-    print_comm_rounds("ADD", [&] { a + b; });
-    print_comm_rounds("SUB", [&] { a - b; });
-    //~ Conversion into arithmetic share
-    print_comm_rounds("CONV", [&] { a.b2a(); });
+    const auto bool_ops = make_bool_ops(a, b);
+
+    for (const auto& [name, func] : bool_ops) {
+        print_comm_rounds(name, func);
+    }
 }
 
 template <typename T>
-void print_comm_rounds_arith(const size_t size) {
-    //~ Operations on arithmetic shares
+void count_comm_rounds_arith(size_t size) {
+    // Operations on arithmetic shares
     ASharedVector<T> a(size), b(size);
 
     single_cout(std::endl
                 << "Arithmetic vector " << size << " x "
                 << std::numeric_limits<std::make_unsigned_t<T>>::digits << "b");
 
-    //~ Arithmetic operations
-    print_comm_rounds("ADD", [&] { a + b; });
-    print_comm_rounds("SUB", [&] { a - b; });
-    print_comm_rounds("MULT", [&] { a* b; });
-    //~ Division operations (implemented, but cause division-by-zero errors)
-    // print_comm_rounds("DIV", [&] { a / b; });
-    // print_comm_rounds("PUB DIV", [&] { a / static_cast<T>(9); });
-    //~ Dot product operation
-    print_comm_rounds("DOT 0", [&] { a.dot_product(b, 0); });
-    print_comm_rounds("DOT 2", [&] { a.dot_product(b, a.size() / 2); });
-    print_comm_rounds("DOT F", [&] { a.dot_product(b, a.size()); });
-    //~ Conversion into boolean shares
-    print_comm_rounds("CONV", [&] { a.a2b(); });
-}
+    const auto arith_ops = make_arith_ops(a, b);
 
-template <typename Func>
-void print_time_elapsed(const std::string& name, Func&& function) {
-    const auto start = stopwatch::get_elapsed();
-    std::invoke(std::forward<Func>(function));
-    const size_t end = stopwatch::get_elapsed();
-    single_cout(std::setw(10) << std::left << name << " took " << (end - start) << " s");
+    for (const auto& [name, func] : arith_ops) {
+        print_comm_rounds(name, func);
+    }
 }
 
 template <typename T>
 void benchmark_bool(const size_t size) {
-    //~ Operations on boolean shares
+    // Operations on boolean shares
     BSharedVector<T> a(size), b(size);
+
 
     single_cout(std::endl
                 << "Boolean vector " << size << " x "
                 << std::numeric_limits<std::make_unsigned_t<T>>::digits << "b");
 
-    //~ Boolean operations
-    print_time_elapsed("AND", [&] { a & b; });
-    print_time_elapsed("OR", [&] { a | b; });
-    print_time_elapsed("XOR", [&] { a ^ b; });
-    print_time_elapsed("NEG", [&] { !a; });
-    print_time_elapsed("COMPL", [&] { ~a; });
-    print_time_elapsed("EQ", [&] { a == b; });
-    //~ Comparison operations
-    print_time_elapsed("GR", [&] { a > b; });
-    print_time_elapsed("GE", [&] { a >= b; });
-    //~ Arithmetical operations
-    print_time_elapsed("ADD", [&] { a + b; });
-    print_time_elapsed("SUB", [&] { a - b; });
-    //~ Conversion into arithmetic share
-    print_time_elapsed("CONV", [&] { a.b2a(); });
+    const auto bool_ops = make_bool_ops(a, b);
+
+    for (const auto& [name, func] : bool_ops) {
+        print_time_elapsed(name, func);
+    }
 }
 
 template <typename T>
 void benchmark_arith(const size_t size) {
-    //~ Operations on arithmetic shares
+    // Operations on arithmetic shares
     ASharedVector<T> a(size), b(size);
 
     single_cout(std::endl
                 << "Arithmetic vector " << size << " x "
                 << std::numeric_limits<std::make_unsigned_t<T>>::digits << "b");
 
-    //~ Arithmetic operations
-    print_time_elapsed("ADD", [&] { a + b; });
-    print_time_elapsed("SUB", [&] { a - b; });
-    print_time_elapsed("MULT", [&] { a* b; });
-    //~ Dot product operations
-    print_time_elapsed("DOT 0", [&] { a.dot_product(b, 0); });
-    print_time_elapsed("DOT 2", [&] { a.dot_product(b, a.size() / 2); });
-    print_time_elapsed("DOT F", [&] { a.dot_product(b, a.size()); });
-    //~ Conversion into boolean shares
-    print_time_elapsed("CONV", [&] { a.a2b(); });
+    const auto arith_ops = make_arith_ops(a, b);
+
+    for (const auto& [name, func] : arith_ops) {
+        print_time_elapsed(name, func);
+    }
 }
 
 #pragma GCC diagnostic pop
