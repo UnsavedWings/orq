@@ -1,0 +1,112 @@
+
+Boolean vector 128 x 8b
+AND        took   1 rounds
+OR         took   1 rounds
+XOR        took   0 rounds
+NEG        took   0 rounds
+COMPLEMENT took   0 rounds
+EQ         took   3 rounds
+NEQ        took   3 rounds
+GR         took   5 rounds
+GE         took   5 rounds
+COMPARE    took   5 rounds
+ADD        took   7 rounds
+SUB        took   7 rounds
+DIV        took 349 rounds
+CONV       took  31 rounds
+
+Boolean vector 128 x 16b
+AND        took   1 rounds
+OR         took   1 rounds
+XOR        took   0 rounds
+NEG        took   0 rounds
+COMPLEMENT took   0 rounds
+EQ         took   4 rounds
+NEQ        took   4 rounds
+GR         took   6 rounds
+GE         took   6 rounds
+COMPARE    took   6 rounds
+ADD        took  15 rounds
+SUB        took  15 rounds
+DIV        took 605 rounds
+CONV       took  63 rounds
+
+Boolean vector 128 x 32b
+AND        took   1 rounds
+OR         took   1 rounds
+XOR        took   0 rounds
+NEG        took   0 rounds
+COMPLEMENT took   0 rounds
+EQ         took   5 rounds
+NEQ        took   5 rounds
+GR         took   7 rounds
+GE         took   7 rounds
+COMPARE    took   7 rounds
+ADD        took  31 rounds
+SUB        took  31 rounds
+DIV        took 2237 rounds
+CONV       took 127 rounds
+
+Boolean vector 128 x 64b
+AND        took   1 rounds
+OR         took   1 rounds
+XOR        took   0 rounds
+NEG        took   0 rounds
+COMPLEMENT took   0 rounds
+EQ         took   6 rounds
+NEQ        took   6 rounds
+GR         took   8 rounds
+GE         took   8 rounds
+COMPARE    took   8 rounds
+ADD        took  63 rounds
+SUB        took  63 rounds
+DIV        took 8573 rounds
+CONV       took 255 rounds
+
+Arithmetic vector 128 x 8b
+ADD        took   0 rounds
+SUB        took   0 rounds
+MULT       took   1 rounds
+MULT PUB   took   1 rounds
+DIV        took  18 rounds
+PRIVAT DIV took 375 rounds
+DOT 1      took   1 rounds
+DOT H      took   1 rounds
+DOT F      took   1 rounds
+CONV       took  13 rounds
+
+Arithmetic vector 128 x 16b
+ADD        took   0 rounds
+SUB        took   0 rounds
+MULT       took   1 rounds
+MULT PUB   took   1 rounds
+DIV        took  26 rounds
+PRIVAT DIV took 647 rounds
+DOT 1      took   1 rounds
+DOT H      took   1 rounds
+DOT F      took   1 rounds
+CONV       took  21 rounds
+
+Arithmetic vector 128 x 32b
+ADD        took   0 rounds
+SUB        took   0 rounds
+MULT       took   1 rounds
+MULT PUB   took   1 rounds
+DIV        took  42 rounds
+PRIVAT DIV took 2311 rounds
+DOT 1      took   1 rounds
+DOT H      took   1 rounds
+DOT F      took   1 rounds
+CONV       took  37 rounds
+
+Arithmetic vector 128 x 64b
+ADD        took   0 rounds
+SUB        took   0 rounds
+MULT       took   1 rounds
+MULT PUB   took   1 rounds
+DIV        took  74 rounds
+PRIVAT DIV took 8711 rounds
+DOT 1      took   1 rounds
+DOT H      took   1 rounds
+DOT F      took   1 rounds
+CONV       took  69 rounds
