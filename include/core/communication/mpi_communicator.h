@@ -90,6 +90,9 @@ class MPICommunicator : public Communicator {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         bytes_sent += sizeof(T);
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("sendShare_impl called to send a share to party " + std::to_string(_id));
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         int ind = (numParties + _id + this->currentId) % numParties;
         MPI_Send(&share, 1, MPI_type<T>::v, ind, msg_tag, MPI_COMM_WORLD);
@@ -109,6 +112,9 @@ class MPICommunicator : public Communicator {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         bytes_sent += (sizeof(T) * _size);
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("sendShares_impl called with " + std::to_string(_size) + " shares to send to party " + std::to_string(_id));
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         int to_ind = (numParties + _id + this->currentId) % numParties;
         std::vector<MPI_Request> requests;
@@ -157,6 +163,9 @@ class MPICommunicator : public Communicator {
     void receiveShare_impl(T &_share, PartyID _id) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("receiveShare_impl called to receive a share from party " + std::to_string(_id));
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         int ind = (numParties + _id + this->currentId) % numParties;
         MPI_Recv(&_share, 1, MPI_type<T>::v, ind, msg_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -172,6 +181,9 @@ class MPICommunicator : public Communicator {
     void receiveShares_impl(Vector<T> &_shares, PartyID _id, size_t _size) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("receiveShares_impl called with " + std::to_string(_size) + " shares to receive from party " + std::to_string(_id));
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
 
@@ -269,6 +281,9 @@ class MPICommunicator : public Communicator {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         bytes_sent += (sizeof(T) * _size);
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("exchangeShares_impl called with " + std::to_string(_size) + " shares to send and receive");
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         int to_ind = (numParties + to_id + this->currentId) % numParties;
         int from_ind = (numParties + from_id + this->currentId) % numParties;
@@ -333,6 +348,9 @@ class MPICommunicator : public Communicator {
     void sendShares_impl(const std::vector<Vector<T>> &shares, std::vector<PartyID> partyID) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("sendShares_impl called with " + std::to_string(shares.size()) + " shares to send");
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
 
@@ -386,6 +404,9 @@ class MPICommunicator : public Communicator {
     void receiveBroadcast_impl(std::vector<Vector<T>> &shares, std::vector<PartyID> partyID) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("receiveBroadcast_impl called with " + std::to_string(shares.size()) + " shares to receive");
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
 
@@ -441,6 +462,10 @@ class MPICommunicator : public Communicator {
                              std::vector<PartyID> from_id) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         comm_rounds++;
+#ifdef PRINT_MPI_INVOCATIONS
+        single_cout("exchangeShares_impl called with " + std::to_string(shares.size()) + " shares to send and " +
+                    std::to_string(received_shares.size()) + " shares to receive");
+#endif
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
 
