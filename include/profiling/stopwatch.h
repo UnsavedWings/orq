@@ -17,9 +17,9 @@ namespace orq::benchmarking::stopwatch {
 
 using sec = std::chrono::duration<float, std::chrono::seconds::period>;
 
-int partyID = 0;
+inline int partyID = 0;
 
-std::chrono::steady_clock::time_point _tp_first;
+inline std::chrono::steady_clock::time_point _tp_first;
 
 // profiling
 static std::map<std::string, double> stopwatch_times;
@@ -35,8 +35,8 @@ static std::chrono::steady_clock::time_point preproc_last;
  *
  * @param label The string label to validate.
  */
-static inline void _validate_label_no_quotes(const std::string& label) {
-    if ((label.find('"') != std::string::npos) || (label.find("'") != std::string::npos)) {
+static void _validate_label_no_quotes(const std::string& label) {
+    if ((label.find('"') != std::string::npos) || (label.find('\'') != std::string::npos)) {
         throw std::invalid_argument(
             "Stopwatch label contains a double quote (\") which is not allowed.");
     }
@@ -50,7 +50,7 @@ static inline void _validate_label_no_quotes(const std::string& label) {
  *
  * @param label
  */
-void timepoint(std::string label) {
+inline void timepoint(const std::string& label) {
     _validate_label_no_quotes(label);
     static std::chrono::steady_clock::time_point then, now;
     static bool first_time = true;
@@ -67,7 +67,7 @@ void timepoint(std::string label) {
     }
 
     now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<sec>(now - then).count();
+    const auto elapsed = std::chrono::duration_cast<sec>(now - then).count();
     std::cout << "[ SW]  " << std::setw(LABEL_WIDTH) << std::right << label << " "
               << std::setprecision(STOPWATCH_PREC) << std::setw(STOPWATCH_PREC + 4) << std::left
               << elapsed << " sec\n";
@@ -82,7 +82,7 @@ void timepoint(std::string label) {
  *
  * @return float
  */
-double get_elapsed() {
+inline double get_elapsed() {
     static std::chrono::steady_clock::time_point then, now;
     static bool first_time = true;
 
@@ -97,7 +97,7 @@ double get_elapsed() {
     }
 
     now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<sec>(now - then).count();
+    const auto elapsed = std::chrono::duration_cast<sec>(now - then).count();
     then = now;
     return elapsed;
 };
@@ -106,7 +106,7 @@ double get_elapsed() {
  * @brief Write aggregated profile results to `.experiment.json`.
  * Includes both stopwatch timing results and general benchmark outputs.
  */
-void to_json() {
+inline void to_json() {
     if (partyID != 0) {
         return;
     }
@@ -120,11 +120,10 @@ void to_json() {
     bool first = true;
 
     // Write stopwatch times
-    for (const auto& kv : stopwatch_times) {
+    for (const auto& [metric, value] : stopwatch_times) {
         if (!first) out << ",";
         first = false;
-        out << "\"" << kv.first << "\":" << std::fixed << std::setprecision(STOPWATCH_PREC)
-            << kv.second;
+        out << "\"" << metric << "\":" << std::fixed << std::setprecision(STOPWATCH_PREC) << value;
     }
 
     // Write general outputs (from output.cpp)
@@ -143,13 +142,13 @@ void to_json() {
  * since the same initial timepoint.
  *
  */
-void done() {
+inline void done() {
     if (partyID != 0) {
         return;
     }
 
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<sec>(now - _tp_first).count();
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed = std::chrono::duration_cast<sec>(now - _tp_first).count();
     std::cout << "[=SW]  " << std::setw(LABEL_WIDTH) << std::right << "Overall" << " "
               << std::setprecision(STOPWATCH_PREC) << std::setw(STOPWATCH_PREC + 4) << std::left
               << elapsed << " sec\n";
@@ -168,7 +167,7 @@ void done() {
  * should not be used when high-accuracy measurements are needed, but it is
  * sufficient for simple tests and benchmarks.
  */
-void profile_init() {
+inline void profile_init() {
     profile_times.clear();
     preproc_times.clear();
     comm_times.clear();
@@ -182,10 +181,10 @@ void profile_init() {
  *
  * @param label
  */
-void profile_timepoint(std::string label) {
+inline void profile_timepoint(const std::string& label) {
     _validate_label_no_quotes(label);
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<sec>(now - profile_last).count();
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed = std::chrono::duration_cast<sec>(now - profile_last).count();
     profile_times[label] += elapsed;
     profile_last = now;
 }
@@ -198,9 +197,9 @@ void profile_timepoint(std::string label) {
  *
  * @param label
  */
-void profile_preprocessing(std::optional<std::string> label = {}) {
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<sec>(now - preproc_last).count();
+inline void profile_preprocessing(const std::optional<std::string>& label = {}) {
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed = std::chrono::duration_cast<sec>(now - preproc_last).count();
 
     if (label) {
         _validate_label_no_quotes(*label);
@@ -218,9 +217,9 @@ void profile_preprocessing(std::optional<std::string> label = {}) {
  * compute versus communication, but (TODO) should probably be updated.
  *
  * @param label
- * @param t time in seconds
+ * @param time time in seconds
  */
-void profile_comm(std::string label, double t) { comm_times[label] += t; }
+inline void profile_comm(const std::string& label, const double time) { comm_times[label] += time; }
 
 /**
  * @brief Complete profiling and output a profiling report. Prints each category
@@ -228,7 +227,7 @@ void profile_comm(std::string label, double t) { comm_times[label] += t; }
  * breakdown of offline versus online time.
  *
  */
-void profile_done() {
+inline void profile_done() {
     if (partyID != 0) {
         return;
     }

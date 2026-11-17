@@ -2,7 +2,6 @@
 
 #include <iomanip>
 #include <map>
-#include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -35,7 +34,7 @@ inline std::map<std::string, std::variant<double, int64_t>> general_outputs;
 template <typename T>
 void output(const std::string& key, const T& value) {
     // Validate key (same validation as stopwatch labels)
-    if ((key.find('"') != std::string::npos) || (key.find("'") != std::string::npos)) {
+    if ((key.find('"') != std::string::npos) || (key.find('\'') != std::string::npos)) {
         throw std::invalid_argument("Output key contains a quote character which is not allowed.");
     }
 
@@ -67,15 +66,15 @@ inline void clear_outputs() { general_outputs.clear(); }
  * @param first Reference to boolean tracking if this is the first entry
  */
 inline void write_outputs_to_json(std::ostream& out, bool& first) {
-    for (const auto& kv : general_outputs) {
+    for (const auto& [metric_name, value] : general_outputs) {
         if (!first) out << ",";
         first = false;
-        out << "\"" << kv.first << "\":";
+        out << "\"" << metric_name << "\":";
 
         // Write value based on variant type
         std::visit(
-            [&out](const auto& val) {
-                using T = std::decay_t<decltype(val)>;
+            [&out]<typename K>(const K& val) {
+                using T = std::decay_t<K>;
                 if constexpr (std::is_same_v<T, double>) {
                     out << std::fixed << std::setprecision(STOPWATCH_PREC) << val;
                 } else if constexpr (std::is_same_v<T, int64_t>) {
@@ -83,7 +82,7 @@ inline void write_outputs_to_json(std::ostream& out, bool& first) {
                 } else if constexpr (std::is_same_v<T, std::string>) {
                     // Escape quotes in string values
                     out << "\"";
-                    for (char c : val) {
+                    for (const char c : val) {
                         if (c == '"' || c == '\\') {
                             out << '\\';
                         }
@@ -92,7 +91,7 @@ inline void write_outputs_to_json(std::ostream& out, bool& first) {
                     out << "\"";
                 }
             },
-            kv.second);
+            value);
     }
 }
 

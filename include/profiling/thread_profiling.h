@@ -2,11 +2,14 @@
 
 #include <unistd.h>
 
+#include <array>
+#include <atomic>
 #include <chrono>
-#include <deque>
-#include <fstream>
 #include <iostream>
 #include <map>
+#include <ranges>
+#include <sstream>
+#include <stdexcept>
 #include <thread>
 
 // TODO: maybe move these to utility file or something
@@ -17,10 +20,10 @@
  * @param cmd command to run
  * @return std::string stdout from the command
  */
-std::string exec(const char* cmd) {
-    std::array<char, 128> buffer;
+inline std::string exec(const char* cmd) {
+    std::array<char, 128> buffer{};
     std::string result;
-    std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(cmd, "r"), pclose);
+    const std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(cmd, "r"), pclose);
     if (!pipe) {
         throw std::runtime_error("popen() failed!");
     }
@@ -37,7 +40,7 @@ std::string exec(const char* cmd) {
  * @param str
  * @return std::string
  */
-std::string prependHash(const std::string& str) {
+inline std::string prependHash(const std::string& str) {
     std::string result;
     std::istringstream stream(str);
     std::string line;
@@ -58,14 +61,14 @@ std::string prependHash(const std::string& str) {
  *
  * @return std::string
  */
-std::string hostname() {
-    char hn[HOST_NAME_MAX];
-    int ret = gethostname(hn, HOST_NAME_MAX);
+inline std::string hostname() {
+    char host_name[HOST_NAME_MAX];
+    const int ret = gethostname(host_name, HOST_NAME_MAX);
     if (ret != 0) {
         std::cerr << "error: could not get hostname (" << ret << ")\n";
         exit(1);
     }
-    return std::string(hn);
+    return std::string(host_name);
 }
 
 namespace orq::instrumentation::thread_stopwatch {
@@ -76,15 +79,15 @@ namespace orq::instrumentation::thread_stopwatch {
  * TODO: revert this to fix `write`
  *
  */
-std::map<int64_t, std::atomic_uint64_t> timing;
+inline std::map<int64_t, std::atomic_uint64_t> timing;
 
 /**
  * @brief Get the current time of `steady_clock` in nanoseconds.
  *
  * @return uint64_t
  */
-uint64_t get_now_ns() {
-    auto now = std::chrono::steady_clock::now();
+inline uint64_t get_now_ns() {
+    const auto now = std::chrono::steady_clock::now();
     return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
 
@@ -168,14 +171,14 @@ uint64_t get_now_ns() {
  * @param pid
  * @return double
  */
-double get_aggregate_comm(int pid = 0) {
+inline double get_aggregate_comm(const int pid = 0) {
     if (pid != 0) return 0;
 
     uint64_t total_ns = 0;
 
     // RACE CONDITION:
     // Worker threads update their `InstrumentBlock`s just before returning,
-    // but the destructor is called *after* the the relevant barrier returns.
+    // but the destructor is called *after* the relevant barrier returns.
     // Therefore, the main thread might return from the runtime (and call this
     // function) before a thread has finished updating, and start iterating
     // through a map which is about to be updated.
@@ -183,12 +186,12 @@ double get_aggregate_comm(int pid = 0) {
     // I "fixed" this for now by removing instrumentation from the runtime: we
     // only care about communication for this test.
 
-    for (auto& [tid, u] : timing) {
+    for (auto& u : timing | std::views::values) {
         // increment our counter and reset `u` to 0.
         total_ns += u.exchange(0);
     }
 
-    return (double)total_ns / 1e9;
+    return static_cast<double>(total_ns) / 1e9;
 }
 
 /**
@@ -196,7 +199,7 @@ double get_aggregate_comm(int pid = 0) {
  *
  * @param tid
  */
-void init_map(std::thread::id tid) { timing[std::hash<std::thread::id>{}(tid)] = 0; }
+inline void init_map(const std::thread::id tid) { timing[std::hash<std::thread::id>{}(tid)] = 0; }
 
 /**
  * @brief A utility class to measure the time taken in a given C++ code block.
@@ -274,7 +277,7 @@ class InstrumentBlock {
      * @param args
      */
     template <typename... T>
-    InstrumentBlock(T... args) : tid(0), start(0) {}
+    explicit InstrumentBlock([[maybe_unused]] T... args) : tid(0), start(0), end(0) {}
 
 #endif
 };

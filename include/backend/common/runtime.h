@@ -1,15 +1,12 @@
 #pragma once
 
-#include <pthread.h>
 #include <sched.h>
-#include <unistd.h>
 
 #include <algorithm>
-#include <atomic>
 #include <barrier>
 #include <mutex>
-#include <queue>
 #include <thread>
+#include <utility>
 
 #include "core/random/prg/committed_seeds_queue.h"
 #include "cryptoTools/Common/CLP.h"
@@ -141,26 +138,25 @@ namespace orq::service {
  * @brief Configure the command line interface for a given long/short argument pair
  *
  * @param cmd
- * @param long
- * @param short
- * @param default default-initialized to T's zero value.
+ * @param _long
+ * @param _short
+ * @param _default default-initialized to T's zero value.
  */
 template <typename T = std::string>
-T register_cli(oc::CLP& cmd, std::string _long, std::string _short, T _default = T{}) {
+T register_cli(oc::CLP& cmd, const std::string& _long, const std::string& _short, T _default = T{}) {
     if (_long.empty() || _short.empty()) {
         throw std::runtime_error("Must provide non-null argument to CLP");
     }
 
     // Long-form options take precedence over abbreviated
-    // If only short entered, use that. Otherwise use default.
+    // If only short entered, use that. Otherwise, use default.
     if (cmd.hasValue(_long)) {
         return cmd.get<T>(_long);
     }
-    return cmd.getOr<T>(_short, _default);
+    return cmd.getOr<T>(_short, std::move(_default));
 }
 
 class RunTime {
-   private:
     /**
      * @brief Use a barrier to synchronization workers with main thread
      *
@@ -217,7 +213,7 @@ class RunTime {
      * @brief Main thread waits for all workers to arrive at the barrier.
      *
      */
-    void main_thread_wait() {
+    void main_thread_wait() const {
         thread_stopwatch::InstrumentBlock _ib{"wait"};
         barrier->arrive_and_wait();
     }
@@ -229,8 +225,8 @@ class RunTime {
      * @param batch_size_override
      * @return std::vector<std::pair<size_t, size_t>>
      */
-    std::vector<std::pair<size_t, size_t>> getThreadBatchBoundaries(
-        size_t total_size, std::optional<long> batch_size_override = std::nullopt) {
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getThreadBatchBoundaries(
+        const size_t total_size, const std::optional<long> batch_size_override = std::nullopt) const {
         std::vector<std::pair<size_t, size_t>> boundaries;
         // uses member variable batch size with an
         // optional override argument
@@ -269,7 +265,7 @@ class RunTime {
 
             // end_index is exclusive
             end_index = start_index + n;
-            boundaries.push_back({start_index, end_index});
+            boundaries.emplace_back(start_index, end_index);
 
             start_index = end_index;
         }
@@ -322,7 +318,7 @@ class RunTime {
         requires std::invocable<F&, size_t, size_t, Worker&> &&
                  std::convertible_to<std::invoke_result_t<F&, size_t, size_t, Worker&>,
                                      std::unique_ptr<Task>>
-    void addTask(size_t size, F&& task_factory, std::optional<long> batch_size = std::nullopt) {
+    void addTask(const size_t size, F&& task_factory, const std::optional<long> batch_size = std::nullopt) {
         auto boundaries = getThreadBatchBoundaries(size, batch_size);
 
         for (int t = 0; t < num_threads; t++) {
@@ -361,14 +357,14 @@ class RunTime {
      *
      * @return orq::Communicator*
      */
-    orq::Communicator* comm0() { return worker0->getCommunicator(); }
+    [[nodiscard]] Communicator* comm0() const { return worker0->getCommunicator(); }
 
     /**
      * @brief Get worker zero's randomness manager
      *
      * @return orq::random::RandomnessManager*
      */
-    orq::random::RandomnessManager* rand0() { return worker0->getRandManager(); }
+    [[nodiscard]] random::RandomnessManager* rand0() const { return worker0->getRandManager(); }
 
     /**
      * @brief Check if this runtime is terminated
@@ -376,7 +372,7 @@ class RunTime {
      * @return true
      * @return false
      */
-    bool terminated() { return terminate_; }
+    [[nodiscard]] bool terminated() const { return terminate_; }
 
     /**
      * @brief Destructor. Set `terminate_` to true, and wait for all socket communicator threads to
@@ -388,8 +384,8 @@ class RunTime {
 
         // Check for SocketCommunicator thread
         // termination
-        for (int i = 0; i < socket_comm_threads.size(); ++i) {
-            socket_comm_threads[i].join();
+        for (auto & socket_comm_thread : socket_comm_threads) {
+            socket_comm_thread.join();
         }
 
 #ifdef MPC_USE_MPI_COMMUNICATOR
@@ -404,16 +400,18 @@ class RunTime {
      *
      * @param _batch_size
      * @param _num_threads
+     * @param cmd_
      * @param testing change to `true` if creating additional `RunTime` objects inside tests
      */
-    RunTime(const long _batch_size, const int _num_threads, std::optional<oc::CLP> cmd_,
-            bool testing = false)
-        : batch_size(_batch_size),
+    RunTime(const long _batch_size, const int _num_threads, const std::optional<oc::CLP>& cmd_,
+            const bool testing = false)
+        : barrier(std::make_shared<std::barrier<>>(_num_threads + 1)),
           num_threads(_num_threads),
-          terminate_(false),
-          testing(testing),
+          batch_size(_batch_size),
+          rank_(-1), testing(testing),
           // initialize synchronization barrier
-          barrier(std::make_shared<std::barrier<>>(_num_threads + 1)) {
+          worker0(nullptr)
+    {
         if (cmd_) {
             cmd = *cmd_;
             setting = parse_setting(register_cli<std::string>(cmd, "setting", "s", "same"));
@@ -423,7 +421,7 @@ class RunTime {
     }
 
     /**
-     * @brief Setup the thread workers for this party
+     * @brief Set up the thread workers for this party
      *
      * @param rank
      */
@@ -434,7 +432,7 @@ class RunTime {
         for (int i = 0; i < num_threads; i++) {
             // Create each worker - need to use emplace to construct directly
             // inside vector.
-            workers.emplace_back(rank, barrier, WorkerConfig{num_threads, i});
+            workers.emplace_back(rank, barrier, WorkerConfig{.num_workers = num_threads, .worker_id = i});
             // and start it
             workers.back().start();
         }
@@ -575,7 +573,7 @@ class RunTime {
 
         addTask(
             range_size,
-            [&](const size_t start, const size_t end, Worker& w) {
+            [&](const size_t start, const size_t end, const Worker& w) {
                 size_t tid = w.getId();
                 return std::make_unique<Task_0_void>(
                     start, end, static_cast<ssize_t>(end - start),
@@ -606,11 +604,11 @@ class RunTime {
      * @param args additional args to pass to the generator
      */
     template <typename InputType, typename... T>
-    void generate_parallel(void (orq::random::RandomnessManager::*func)(InputType&, T...),
+    void generate_parallel(void (random::RandomnessManager::*func)(InputType&, T...),
                            InputType& input, const T&... args) {
         thread_stopwatch::InstrumentBlock _ib{};
 
-        addTask(input.total_size(), [&](const size_t start, const size_t end, Worker& w) {
+        addTask(input.total_size(), [&](const size_t start, const size_t end, const Worker& w) {
             return std::make_unique<Task_1_void<InputType>>(
                 input, start, end, batch_size,
                 [&, this](InputType& _x) { (w.getRandManager()->*func)(_x, args...); });
@@ -671,7 +669,7 @@ class RunTime {
             return std::make_unique<Task_1_ref<InT, OutT>>(
                 x, res, start, end, batch_size, [&, this](InT& _x, OutT& _res) {
                     _res = (static_cast<Proto*>((w.*ProtoObj).get())->*F)(_x, args...);
-                    std::call_once(precision_flag, [&]() { precision = _res.getPrecision(); });
+                    std::call_once(precision_flag, [&] { precision = _res.getPrecision(); });
                 });
         });
 
@@ -777,7 +775,6 @@ class RunTime {
      * @tparam InT
      * @tparam OutT
      * @tparam T For the aggregation size.
-     * @tparam T2
      * @param x
      * @param y
      * @param r
@@ -794,8 +791,7 @@ class RunTime {
         // and (2) ensuring that the dot product is computed in batches of
         // size divisible by `aggSize` elements inside the runtime.
         assert(x.size() % agg == 0);
-        ssize_t old_batch_size;
-        old_batch_size = makeBatchSizeDivisibleBy(x.size(), agg);
+        const ssize_t old_batch_size = makeBatchSizeDivisibleBy(x.size(), agg);
 
         addTask(x.total_size(), [&](const size_t start, const size_t end, Worker& w) {
             return std::make_unique<Task_2_Agg_ref<InT, OutT>>(
@@ -816,22 +812,22 @@ class RunTime {
      * @param ret The set of sharded permutations to generate.
      */
     template <typename T>
-    void generate_permutations(std::vector<std::shared_ptr<orq::random::ShardedPermutation>>& ret) {
+    void generate_permutations(std::vector<std::shared_ptr<random::ShardedPermutation>>& ret) {
         thread_stopwatch::InstrumentBlock _ib{};
-        int num_permutations = ret.size();
+        const size_t num_permutations = ret.size();
 
         // calculate the number of permutations each
         // thread will generate
         std::vector<int> perms_per_thread(num_threads);
-        int basePerms = num_permutations / num_threads;
-        int remainder = num_permutations % num_threads;
+        const size_t basePerms = num_permutations / num_threads;
+        const size_t remainder = num_permutations % num_threads;
         for (int i = 0; i < num_threads; ++i) {
-            perms_per_thread[i] = basePerms + (i < remainder ? 1 : 0);
+            perms_per_thread[i] = static_cast<int>(basePerms) + (i < remainder ? 1 : 0);
         }
 
-        using permVec_t = std::vector<std::shared_ptr<orq::random::ShardedPermutation>>;
+        using permVec_t = std::vector<std::shared_ptr<random::ShardedPermutation>>;
 
-        permVec_t perms(basePerms + 1);
+        permVec_t permutations(basePerms + 1);
 
         int perm_index = 0;
         for (int t = 0; t < num_threads; ++t) {
@@ -839,16 +835,16 @@ class RunTime {
             auto& w = workers[t];
             auto generator =
                 w.getRandManager()
-                    ->template getCorrelation<T, random::ShardedPermutationGenerator>();
+                    ->getCorrelation<T, random::ShardedPermutationGenerator>();
 
-            perms.resize(perms_per_thread[t]);
+            permutations.resize(perms_per_thread[t]);
 
-            for (int i = 0; i < perms.size(); ++i) {
-                perms[i] = ret[perm_index++];
+            for (auto & permutation : permutations) {
+                permutation = ret[perm_index++];
             }
 
             w.addTask(std::make_unique<Task_1_void_nobatch<permVec_t>>(
-                perms, [generator, this](permVec_t& _x) { generator->generateBatch(_x); }));
+                permutations, [generator, this](permVec_t& _x) { generator->generateBatch(_x); }));
         }
 
         main_thread_wait();
@@ -935,42 +931,42 @@ class RunTime {
      *
      * @return int
      */
-    int getPartyID() const { return rank_; }
+    [[nodiscard]] int getPartyID() const { return rank_; }
 
     /**
      * @brief Get the number of auxiliary clusters for multinode operation
      *
      * @return int Number of auxiliary clusters (0 = single-node mode)
      */
-    int getMultinodeNumAux() const { return multinode_num_aux_; }
+    [[nodiscard]] int getMultinodeNumAux() const { return multinode_num_aux_; }
 
     /**
      * @brief Get this auxiliary's index in alphabetical prefix order
      *
      * @return int Auxiliary index (0-based)
      */
-    int getMultinodeAuxIndex() const { return multinode_aux_index_; }
+    [[nodiscard]] int getMultinodeAuxIndex() const { return multinode_aux_index_; }
 
     /**
      * @brief Get the replication number for the current protocol
      *
      * @return int
      */
-    int getReplicationNumber() const { return workers[0].proto_32->getRepNumber(); }
+    [[nodiscard]] int getReplicationNumber() const { return workers[0].proto_32->getRepNumber(); }
 
     /**
      * @brief Get all randomness groups for this protocol
      *
      * @return std::vector<std::set<int>>
      */
-    std::vector<std::set<int>> getGroups() const { return workers[0].proto_32->getGroups(); }
+    [[nodiscard]] std::vector<std::set<int>> getGroups() const { return workers[0].proto_32->getGroups(); }
 
     /**
      * @brief Get the current batch size
      *
      * @return ssize_t
      */
-    ssize_t getBatchSize() const { return batch_size; }
+    [[nodiscard]] ssize_t getBatchSize() const { return batch_size; }
 
     /**
      * @brief Get the number of batches which would be required for a vector of
@@ -979,16 +975,16 @@ class RunTime {
      * @param n
      * @return size_t
      */
-    size_t numBatches(size_t n) {
-        auto b = getBatchSize();
+    [[nodiscard]] size_t numBatches(const size_t n) const {
+        const auto b = getBatchSize();
         if (b < 0) {
             // negative = equal division into that many batches
             return -b;
         }
 
         // ceiling division
-        size_t total_batch = (n + b - 1) / b;
-        size_t batch_per_thread = (total_batch + num_threads - 1) / num_threads;
+        const size_t total_batch = (n + b - 1) / b;
+        const size_t batch_per_thread = (total_batch + num_threads - 1) / num_threads;
         return batch_per_thread;
     }
 
@@ -1030,30 +1026,30 @@ class RunTime {
      *
      * @return int
      */
-    int get_num_threads() { return num_threads; }
+    [[nodiscard]] int get_num_threads() const { return num_threads; }
 
     /**
      * @brief Get the batch size
      *
      * @return int
      */
-    int get_batch_size() { return batch_size; }
+    [[nodiscard]] int get_batch_size() const { return static_cast<int>(batch_size); }
 
     /**
      * @brief Get the number of parties
      *
      * @return const int
      */
-    const int getNumParties() const { return workers[0].proto_32->getNumParties(); }
+    [[nodiscard]] int getNumParties() const { return workers[0].proto_32->getNumParties(); }
 
-    const Setting getSetting() const { return setting; }
+    [[nodiscard]] Setting getSetting() const { return setting; }
 
     /**
      * @brief Get a set of all party indices
      *
      * @return std::set<int>
      */
-    std::set<int> getPartySet() const {
+    [[nodiscard]] std::set<int> getPartySet() const {
         std::set<int> partySet;
         for (int i = 0; i < getNumParties(); i++) {
             partySet.insert(i);
@@ -1066,7 +1062,7 @@ class RunTime {
      *
      * @return std::vector<std::vector<int>>
      */
-    std::vector<std::vector<int>> getPartyShareMappings() const {
+    [[nodiscard]] std::vector<std::vector<int>> getPartyShareMappings() const {
         return workers[0].proto_32->getPartyShareMappings();
     }
 
@@ -1076,7 +1072,7 @@ class RunTime {
      */
     template <typename T>
     void populateLocalRandom(Vector<T>& v) {
-        generate_parallel(&orq::random::RandomnessManager::generate_local, v);
+        generate_parallel(&random::RandomnessManager::generate_local, v);
     }
 
     /**
@@ -1086,7 +1082,7 @@ class RunTime {
      */
     template <typename T>
     void populateCommonRandom(Vector<T>& v, std::set<int> group) {
-        generate_parallel(&orq::random::RandomnessManager::generate_common, v, group);
+        generate_parallel(&random::RandomnessManager::generate_common, v, group);
     }
 
     /**
@@ -1100,18 +1096,20 @@ class RunTime {
      *
      * TODO: use runtime::addtask. Custom batching here.
      */
-    template <typename T>
-    void reserve_triples(void (orq::random::RandomnessManager::*func)(size_t n), size_t n) {
+    template <class T>
+    void reserve_triples(void (random::RandomnessManager::*func)(size_t n), size_t n) {
         thread_stopwatch::InstrumentBlock _ib{};
 
         // batch size here is -1: each thread generates a single batch of
         // triples
         addTask(
             n,
-            [&](const size_t start, const size_t end, Worker& w) {
+            [&](const size_t start, const size_t end, const Worker& w) {
                 const size_t triple_size = end - start;
                 return std::make_unique<Task_0_void>(start, end, triple_size,
-                                                     [&, triple_size, this](int _start, int _end) {
+                                                     [&, triple_size, this](
+                                                         [[maybe_unused]] int _start, [[maybe_unused]] int _end)
+                                                     {
                                                          (w.getRandManager()->*func)(triple_size);
                                                      });
             },
@@ -1151,7 +1149,7 @@ class RunTime {
      * @return orq::Vector<T>
      */
     template <typename T, int R>
-    orq::Vector<T> open_shares_a(EVector<T, R> shares) {
+    Vector<T> open_shares_a(EVector<T, R> shares) {
         malicious_check();
         return internal_open_a(shares);
     }
@@ -1165,7 +1163,7 @@ class RunTime {
      * @return orq::Vector<T>
      */
     template <typename T, int R>
-    orq::Vector<T> open_shares_b(EVector<T, R> shares) {
+    Vector<T> open_shares_b(EVector<T, R> shares) {
         malicious_check();
         return internal_open_b(shares);
     }
@@ -1207,31 +1205,38 @@ class RunTime {
     }
 
     void reset_malicious_state() {
-        for (auto& w : workers) {
-            w.reset_malicious_state();
+        for (auto& worker : workers) {
+            worker.reset_malicious_state();
         }
     }
 
     /**
      * Print the number of bytes sent by each communicator.
      */
-    void print_communicator_statistics() {
+    void print_communicator_statistics() const {
 #ifdef PRINT_COMMUNICATOR_STATISTICS
-        const std::string _spacer = " ";
+        constexpr std::string _spacer = " ";
         const std::string title = "Communicator (Bytes sent):";
-        const std::string lhs_prefix = "Thread ";
+        constexpr std::string lhs_prefix = "Thread ";
 
-        int lhs_width = lhs_prefix.size() + std::ceil(std::log10(num_threads)) + 1;
-        size_t total_bytes_approximate = comm0()->getBytesSent() * num_threads;
-        int max_bytes_width =
-            (total_bytes_approximate > 0 ? std::ceil(std::log10(total_bytes_approximate)) : 0) + 1;
-        auto total_width = std::max(lhs_width + 2 * _spacer.size() + max_bytes_width, title.size());
+        const int lhs_width = static_cast<int>(lhs_prefix.size())
+            + static_cast<int>(std::ceil(std::log10(num_threads)))
+            + 1;
+        const size_t total_bytes_approximate = comm0()->getBytesSent() * num_threads;
+        int max_bytes_width;
+        if (total_bytes_approximate > 0) {
+            max_bytes_width = static_cast<int>(std::ceil(std::log10(total_bytes_approximate)) + 1);
+        }
+        else {
+            max_bytes_width = 1;
+        }
+        const auto total_width = std::max(lhs_width + 2 * _spacer.size() + max_bytes_width, title.size());
 
         std::cout << "\n" << std::string(total_width, '=') << "\n" << title << "\n";
 
         size_t total_bytes_sent = 0;
         for (int i = 0; i < num_threads; ++i) {
-            size_t bytes_sent = workers[i].getCommunicator()->getBytesSent();
+            const size_t bytes_sent = workers[i].getCommunicator()->getBytesSent();
             total_bytes_sent += bytes_sent;
 
             std::cout << _spacer << std::setw(lhs_width) << std::left
@@ -1271,6 +1276,6 @@ static std::unique_ptr<RunTime> runTime;
  * @return true
  * @return false
  */
-bool RunTimeRunning() { return runTime && !runTime->terminated(); }
+inline bool RunTimeRunning() { return runTime && !runTime->terminated(); }
 
 }  // namespace orq::service

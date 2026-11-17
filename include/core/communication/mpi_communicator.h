@@ -34,19 +34,19 @@ struct MPI_type;
 // \cond DOXYGEN_IGNORE
 template <>
 struct MPI_type<int8_t> {
-    inline static const MPI_Datatype v = MPI_INT8_T;
+    inline static const auto v = MPI_INT8_T;
 };
 template <>
 struct MPI_type<int16_t> {
-    inline static const MPI_Datatype v = MPI_INT16_T;
+    inline static const auto v = MPI_INT16_T;
 };
 template <>
 struct MPI_type<int32_t> {
-    inline static const MPI_Datatype v = MPI_INT32_T;
+    inline static const auto v = MPI_INT32_T;
 };
 template <>
 struct MPI_type<int64_t> {
-    inline static const MPI_Datatype v = MPI_INT64_T;
+    inline static const auto v = MPI_INT64_T;
 };
 template <>
 struct MPI_type<__int128_t> {
@@ -58,48 +58,49 @@ struct MPI_type<__int128_t> {
 #endif
 
 class MPICommunicator : public Communicator {
-    int numParties;
+    int numParties{};
     int msg_tag;
     const int parallelism_factor = 1;
 
    public:
-    MPICommunicator(int _currentId, int _msg_tag = 7, const std::string host_prefix = "localhost",
-                    double latency = 0, double bandwidth = std::numeric_limits<double>::infinity(),
-                    orq::service::Setting setting = orq::service::Setting::SAME)
+    explicit MPICommunicator(const int _currentId, const int _msg_tag = 7,
+                             const std::string& host_prefix = "localhost", const double latency = 0,
+                             const double bandwidth = std::numeric_limits<double>::infinity(),
+                             const service::Setting setting = service::Setting::SAME)
         : Communicator(_currentId, host_prefix, latency, bandwidth, setting), msg_tag(_msg_tag) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         MPI_Comm_size(MPI_COMM_WORLD, &numParties);
 #endif
     }
 
-    ~MPICommunicator() {}
+    ~MPICommunicator() override = default;
 
     template <typename T>
-    void sendShare_impl(T share, PartyID _id) {
+    void sendShare_impl(T share, const PartyID destination) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         bytes_sent += sizeof(T);
         thread_stopwatch::InstrumentBlock _ib("comm");
-        int ind = (numParties + _id + this->currentId) % numParties;
-        MPI_Send(&share, 1, MPI_type<T>::v, ind, msg_tag, MPI_COMM_WORLD);
+        const int dest = (numParties + destination + this->currentId) % numParties;
+        MPI_Send(&share, 1, MPI_type<T>::v, dest, msg_tag, MPI_COMM_WORLD);
 #endif
     }
 
-    void sendShare(int8_t share, PartyID _id) override { sendShare_impl(share, _id); }
+    void sendShare(const int8_t share, const PartyID _id) override { sendShare_impl(share, _id); }
 
-    void sendShare(int16_t share, PartyID _id) override { sendShare_impl(share, _id); }
+    void sendShare(int16_t share, PartyID _id) override;
 
-    void sendShare(int32_t share, PartyID _id) override { sendShare_impl(share, _id); }
+    void sendShare(const int32_t share, const PartyID _id) override { sendShare_impl(share, _id); }
 
-    void sendShare(int64_t share, PartyID _id) override { sendShare_impl(share, _id); }
+    void sendShare(const int64_t share, const PartyID _id) override { sendShare_impl(share, _id); }
 
     template <typename T>
-    void sendShares_impl(const Vector<T> &_shares, PartyID _id) {
+    void sendShares_impl(const Vector<T>& _shares, const PartyID _id) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         num_rounds += 1;
         auto _size = _shares.size();
-        bytes_sent += (sizeof(T) * _size);
+        bytes_sent += sizeof(T) * _size;
         thread_stopwatch::InstrumentBlock _ib("comm");
-        int to_ind = (numParties + _id + this->currentId) % numParties;
+        const int to_ind = (numParties + _id + this->currentId) % numParties;
         std::vector<MPI_Request> requests;
 
         assert(!_shares.has_mapping());
@@ -108,56 +109,56 @@ class MPICommunicator : public Communicator {
             _size *= 2;
         }
 
-        int start = 0;
-        size_t __size = _size / parallelism_factor;
+        size_t start = 0;
+        size_t chunk_size = _size / parallelism_factor;
         for (int i = 0; i < parallelism_factor; ++i) {
-            size_t ___size = (i == parallelism_factor - 1) ? _size - start : __size;
+            size_t _chunk_size = (i == parallelism_factor - 1) ? _size - start : chunk_size;
 
             requests.push_back(MPI_Request());
 
-            MPI_Isend(&_shares[start], ___size, MPI_type<T>::v, to_ind, msg_tag + i, MPI_COMM_WORLD,
+            MPI_Isend(&_shares[start], _chunk_size, MPI_type<T>::v, to_ind, msg_tag + i, MPI_COMM_WORLD,
                       &requests[i]);
-            start += ___size;
+            start += _chunk_size;
         }
 
-        for (size_t i = 0; i < requests.size(); ++i) {
-            MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+        for (auto & request : requests) {
+            MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
 #endif
     }
 
-    void sendShares(const Vector<int8_t> &shares, PartyID _id) override {
+    void sendShares(const Vector<int8_t>& shares, const PartyID _id) override {
         sendShares_impl(shares, _id);
     }
-    void sendShares(const Vector<int16_t> &shares, PartyID _id) override {
+    void sendShares(const Vector<int16_t>& shares, const PartyID _id) override {
         sendShares_impl(shares, _id);
     }
-    void sendShares(const Vector<int32_t> &shares, PartyID _id) override {
+    void sendShares(const Vector<int32_t>& shares, const PartyID _id) override {
         sendShares_impl(shares, _id);
     }
-    void sendShares(const Vector<int64_t> &shares, PartyID _id) override {
+    void sendShares(const Vector<int64_t>& shares, const PartyID _id) override {
         sendShares_impl(shares, _id);
     }
-    void sendShares(const Vector<__int128_t> &shares, PartyID _id) override {
+    void sendShares(const Vector<__int128_t>& shares, const PartyID _id) override {
         sendShares_impl(shares, _id);
     }
 
     template <typename T>
-    void receiveShare_impl(T &_share, PartyID _id) {
+    void receiveShare_impl(T& _share, const PartyID _id) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         thread_stopwatch::InstrumentBlock _ib("comm");
-        int ind = (numParties + _id + this->currentId) % numParties;
-        MPI_Recv(&_share, 1, MPI_type<T>::v, ind, msg_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        const int source = (numParties + _id + this->currentId) % numParties;
+        MPI_Recv(&_share, 1, MPI_type<T>::v, source, msg_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 #endif
     }
 
-    void receiveShare(int8_t &_share, PartyID _id) override { receiveShare_impl(_share, _id); }
-    void receiveShare(int16_t &_share, PartyID _id) override { receiveShare_impl(_share, _id); }
-    void receiveShare(int32_t &_share, PartyID _id) override { receiveShare_impl(_share, _id); }
-    void receiveShare(int64_t &_share, PartyID _id) override { receiveShare_impl(_share, _id); }
+    void receiveShare(int8_t& _share, const PartyID _id) override { receiveShare_impl(_share, _id); }
+    void receiveShare(int16_t& _share, const PartyID _id) override { receiveShare_impl(_share, _id); }
+    void receiveShare(int32_t& _share, const PartyID _id) override { receiveShare_impl(_share, _id); }
+    void receiveShare(int64_t& _share, const PartyID _id) override { receiveShare_impl(_share, _id); }
 
     template <typename T>
-    void receiveShares_impl(Vector<T> &_shares, PartyID _id) {
+    void receiveShares_impl(Vector<T>& _shares, const PartyID _id) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
@@ -169,46 +170,46 @@ class MPICommunicator : public Communicator {
         // Make sure we have enough room
         assert(_shares.size() >= _size);
 
-        int from_ind = (numParties + _id + this->currentId) % numParties;
+        const int from_ind = (numParties + _id + this->currentId) % numParties;
 
         if constexpr (std::is_same_v<T, __int128_t>) {
             _size *= 2;
         }
 
         size_t start = 0;
-        size_t __size = _size / parallelism_factor;
+        size_t chunk_size = _size / parallelism_factor;
         for (size_t i = 0; i < parallelism_factor; ++i) {
-            size_t ___size = (i == parallelism_factor - 1) ? _size - start : __size;
+            size_t _chunk_size = (i == parallelism_factor - 1) ? _size - start : chunk_size;
             requests.push_back(MPI_Request());
 
-            MPI_Irecv(&_shares[start], ___size, MPI_type<T>::v, from_ind, msg_tag + i,
+            MPI_Irecv(&_shares[start], _chunk_size, MPI_type<T>::v, from_ind, msg_tag + i,
                       MPI_COMM_WORLD, &requests[i]);
-            start += ___size;
+            start += _chunk_size;
         }
 
-        for (size_t i = 0; i < requests.size(); ++i) {
-            MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+        for (auto & request : requests) {
+            MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
 #endif
     }
 
-    void receiveShares(Vector<int8_t> &_shareVector, PartyID _id) override {
+    void receiveShares(Vector<int8_t>& _shareVector, const PartyID _id) override {
         receiveShares_impl(_shareVector, _id);
     }
 
-    void receiveShares(Vector<int16_t> &_shareVector, PartyID _id) override {
+    void receiveShares(Vector<int16_t>& _shareVector, const PartyID _id) override {
         receiveShares_impl(_shareVector, _id);
     }
 
-    void receiveShares(Vector<int32_t> &_shareVector, PartyID _id) override {
+    void receiveShares(Vector<int32_t>& _shareVector, const PartyID _id) override {
         receiveShares_impl(_shareVector, _id);
     }
 
-    void receiveShares(Vector<int64_t> &_shareVector, PartyID _id) override {
+    void receiveShares(Vector<int64_t>& _shareVector, const PartyID _id) override {
         receiveShares_impl(_shareVector, _id);
     }
 
-    void receiveShares(Vector<__int128_t> &_shareVector, PartyID _id) override {
+    void receiveShares(Vector<__int128_t>& _shareVector, const PartyID _id) override {
         receiveShares_impl(_shareVector, _id);
     }
 
@@ -219,48 +220,47 @@ class MPICommunicator : public Communicator {
      * @param sent_shares
      * @param received_shares
      * @param _id
-     * @param _size
      */
     template <typename T>
-    void exchangeShares_impl(Vector<T> sent_shares, Vector<T> &received_shares, PartyID _id) {
+    void exchangeShares_impl(Vector<T> sent_shares, Vector<T>& received_shares, PartyID _id) {
         exchangeShares_impl(sent_shares, received_shares, _id, _id);
     }
 
-    void exchangeShares(Vector<int8_t> sent_shares, Vector<int8_t> &received_shares,
-                        PartyID _id) override {
+    void exchangeShares(const Vector<int8_t> sent_shares, Vector<int8_t>& received_shares,
+                        const PartyID _id) override {
         exchangeShares_impl(sent_shares, received_shares, _id);
     }
 
-    void exchangeShares(Vector<int16_t> sent_shares, Vector<int16_t> &received_shares,
-                        PartyID _id) override {
+    void exchangeShares(const Vector<int16_t> sent_shares, Vector<int16_t>& received_shares,
+                        const PartyID _id) override {
         exchangeShares_impl(sent_shares, received_shares, _id);
     }
 
-    void exchangeShares(Vector<int32_t> sent_shares, Vector<int32_t> &received_shares,
-                        PartyID _id) override {
+    void exchangeShares(const Vector<int32_t> sent_shares, Vector<int32_t>& received_shares,
+                        const PartyID _id) override {
         exchangeShares_impl(sent_shares, received_shares, _id);
     }
 
-    void exchangeShares(Vector<int64_t> sent_shares, Vector<int64_t> &received_shares,
-                        PartyID _id) override {
+    void exchangeShares(const Vector<int64_t> sent_shares, Vector<int64_t>& received_shares,
+                        const PartyID _id) override {
         exchangeShares_impl(sent_shares, received_shares, _id);
     }
 
-    void exchangeShares(Vector<__int128_t> sent_shares, Vector<__int128_t> &received_shares,
-                        PartyID _id) override {
+    void exchangeShares(const Vector<__int128_t> sent_shares, Vector<__int128_t>& received_shares,
+                        const PartyID _id) override {
         exchangeShares_impl(sent_shares, received_shares, _id);
     }
 
     template <typename T>
-    void exchangeShares_impl(Vector<T> _shares, Vector<T> &received_shares, PartyID to_id,
-                             PartyID from_id) {
+    void exchangeShares_impl(Vector<T> _shares, Vector<T>& received_shares,
+                             const PartyID destination, const PartyID source) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         num_rounds += 1;
         auto _size = _shares.size();
-        bytes_sent += (sizeof(T) * _size);
+        bytes_sent += sizeof(T) * _size;
         thread_stopwatch::InstrumentBlock _ib("comm");
-        int to_ind = (numParties + to_id + this->currentId) % numParties;
-        int from_ind = (numParties + from_id + this->currentId) % numParties;
+        const int _destination = (numParties + destination + this->currentId) % numParties;
+        const int _source = (numParties + source + this->currentId) % numParties;
 
         std::vector<MPI_Request> requests;
 
@@ -273,106 +273,109 @@ class MPICommunicator : public Communicator {
         }
 
         size_t start = 0;
-        size_t __size = _size / parallelism_factor;
+        size_t chunk_size = _size / parallelism_factor;
         for (size_t i = 0; i < parallelism_factor; ++i) {
-            size_t ___size = (i == parallelism_factor - 1) ? _size - start : __size;
+            size_t _chunk_size = (i == parallelism_factor - 1) ? (_size - start) : chunk_size;
 
             requests.push_back(MPI_Request());
             requests.push_back(MPI_Request());
 
-            MPI_Irecv(&received_shares[start], ___size, MPI_type<T>::v, from_ind, msg_tag + i,
+            MPI_Irecv(&received_shares[start], _chunk_size, MPI_type<T>::v, _source, msg_tag + i,
                       MPI_COMM_WORLD, &requests[2 * i]);
-            MPI_Isend(&_shares[start], ___size, MPI_type<T>::v, to_ind, msg_tag + i, MPI_COMM_WORLD,
-                      &requests[2 * i + 1]);
-            start += ___size;
+            MPI_Isend(&_shares[start], _chunk_size, MPI_type<T>::v, _destination, msg_tag + i,
+                      MPI_COMM_WORLD, &requests[2 * i + 1]);
+            start += _chunk_size;
         }
 
-        for (size_t i = 0; i < requests.size(); ++i) {
-            MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+        for (auto & request : requests) {
+            MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
 #endif
     }
 
-    void exchangeShares(Vector<int8_t> sent_shares, Vector<int8_t> &received_shares, PartyID to_id,
-                        PartyID from_id) override {
+    void exchangeShares(const Vector<int8_t> sent_shares, Vector<int8_t>& received_shares, const PartyID to_id,
+                        const PartyID from_id) override {
         exchangeShares_impl(sent_shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(Vector<int16_t> sent_shares, Vector<int16_t> &received_shares,
-                        PartyID to_id, PartyID from_id) override {
+    void exchangeShares(const Vector<int16_t> sent_shares, Vector<int16_t>& received_shares,
+                        const PartyID to_id, const PartyID from_id) override {
         exchangeShares_impl(sent_shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(Vector<int32_t> sent_shares, Vector<int32_t> &received_shares,
-                        PartyID to_id, PartyID from_id) override {
+    void exchangeShares(const Vector<int32_t> sent_shares, Vector<int32_t>& received_shares,
+                        const PartyID to_id, const PartyID from_id) override {
         exchangeShares_impl(sent_shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(Vector<int64_t> sent_shares, Vector<int64_t> &received_shares,
-                        PartyID to_id, PartyID from_id) override {
+    void exchangeShares(const Vector<int64_t> sent_shares, Vector<int64_t>& received_shares,
+                        const PartyID to_id, const PartyID from_id) override {
         exchangeShares_impl(sent_shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(Vector<__int128_t> sent_shares, Vector<__int128_t> &received_shares,
-                        PartyID to_id, PartyID from_id) override {
+    void exchangeShares(const Vector<__int128_t> sent_shares, Vector<__int128_t>& received_shares,
+                        const PartyID to_id, const PartyID from_id) override {
         exchangeShares_impl(sent_shares, received_shares, to_id, from_id);
     }
 
     template <typename T>
-    void sendShares_impl(const std::vector<Vector<T>> &shares, std::vector<PartyID> partyID) {
+    void sendShares_impl(const std::vector<Vector<T>>& shares,
+                         const std::vector<PartyID>& partyIDs) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         num_rounds += 1;
+        bytes_sent += shares[0].size() * shares.size() * sizeof(T);
+        // bytes_sent
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
 
-        assert(shares.size() == partyID.size());
+        assert(shares.size() == partyIDs.size());
 
         size_t size_mul = 1;
         if constexpr (std::is_same_v<T, __int128_t>) {
             size_mul = 2;
         }
 
-        for (size_t i = 0; i < partyID.size(); ++i) {
-            int to_ind = (numParties + partyID[i] + this->currentId) % numParties;
+        for (size_t i = 0; i < partyIDs.size(); ++i) {
+            int destination = (numParties + partyIDs[i] + this->currentId) % numParties;
             requests.push_back(MPI_Request());
             assert(!shares[i].has_mapping());
-            MPI_Isend(&shares[i][0], shares[i].size() * size_mul, MPI_type<T>::v, to_ind, msg_tag,
-                      MPI_COMM_WORLD, &requests[i]);
+            MPI_Isend(&shares[i][0], shares[i].size() * size_mul, MPI_type<T>::v, destination,
+                      msg_tag, MPI_COMM_WORLD, &requests[i]);
         }
 
-        for (size_t i = 0; i < requests.size(); ++i) {
-            MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+        for (auto & request : requests) {
+            MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
 #endif
     }
 
-    void sendShares(const std::vector<Vector<int8_t>> &shares,
-                    std::vector<PartyID> partyID) override {
+    void sendShares(const std::vector<Vector<int8_t>>& shares,
+                    const std::vector<PartyID> partyID) override {
         sendShares_impl(shares, partyID);
     }
 
-    void sendShares(const std::vector<Vector<int16_t>> &shares,
-                    std::vector<PartyID> partyID) override {
+    void sendShares(const std::vector<Vector<int16_t>>& shares,
+                    const std::vector<PartyID> partyID) override {
         sendShares_impl(shares, partyID);
     }
 
-    void sendShares(const std::vector<Vector<int32_t>> &shares,
-                    std::vector<PartyID> partyID) override {
+    void sendShares(const std::vector<Vector<int32_t>>& shares,
+                    const std::vector<PartyID> partyID) override {
         sendShares_impl(shares, partyID);
     }
 
-    void sendShares(const std::vector<Vector<int64_t>> &shares,
-                    std::vector<PartyID> partyID) override {
+    void sendShares(const std::vector<Vector<int64_t>>& shares,
+                    const std::vector<PartyID> partyID) override {
         sendShares_impl(shares, partyID);
     }
 
-    void sendShares(const std::vector<Vector<__int128_t>> &shares,
-                    std::vector<PartyID> partyID) override {
+    void sendShares(const std::vector<Vector<__int128_t>>& shares,
+                    const std::vector<PartyID> partyID) override {
         sendShares_impl(shares, partyID);
     }
 
     template <typename T>
-    void receiveBroadcast_impl(std::vector<Vector<T>> &shares, std::vector<PartyID> partyID) {
+    void receiveBroadcast_impl(std::vector<Vector<T>>& shares, const std::vector<PartyID>& partyID) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         thread_stopwatch::InstrumentBlock _ib("comm");
         std::vector<MPI_Request> requests;
@@ -392,41 +395,42 @@ class MPICommunicator : public Communicator {
                       MPI_COMM_WORLD, &requests[i]);
         }
 
-        for (size_t i = 0; i < requests.size(); ++i) {
-            MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+        for (auto & request : requests) {
+            MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
 #endif
     }
 
-    void receiveBroadcast(std::vector<Vector<int8_t>> &shares,
-                          std::vector<PartyID> partyID) override {
+    void receiveBroadcast(std::vector<Vector<int8_t>>& shares,
+                          const std::vector<PartyID> partyID) override {
         receiveBroadcast_impl(shares, partyID);
     }
 
-    void receiveBroadcast(std::vector<Vector<int16_t>> &shares,
-                          std::vector<PartyID> partyID) override {
+    void receiveBroadcast(std::vector<Vector<int16_t>>& shares,
+                          const std::vector<PartyID> partyID) override {
         receiveBroadcast_impl(shares, partyID);
     }
 
-    void receiveBroadcast(std::vector<Vector<int32_t>> &shares,
-                          std::vector<PartyID> partyID) override {
+    void receiveBroadcast(std::vector<Vector<int32_t>>& shares,
+                          const std::vector<PartyID> partyID) override {
         receiveBroadcast_impl(shares, partyID);
     }
 
-    void receiveBroadcast(std::vector<Vector<int64_t>> &shares,
-                          std::vector<PartyID> partyID) override {
+    void receiveBroadcast(std::vector<Vector<int64_t>>& shares,
+                          const std::vector<PartyID> partyID) override {
         receiveBroadcast_impl(shares, partyID);
     }
 
-    void receiveBroadcast(std::vector<Vector<__int128_t>> &shares,
-                          std::vector<PartyID> partyID) override {
+    void receiveBroadcast(std::vector<Vector<__int128_t>>& shares,
+                          const std::vector<PartyID> partyID) override {
         receiveBroadcast_impl(shares, partyID);
     }
 
     template <typename T>
-    void exchangeShares_impl(const std::vector<Vector<T>> &shares,
-                             std::vector<Vector<T>> &received_shares, std::vector<PartyID> to_id,
-                             std::vector<PartyID> from_id) {
+    void exchangeShares_impl(const std::vector<Vector<T>>& shares,
+                             std::vector<Vector<T>>& received_shares,
+                             const std::vector<PartyID>& destination,
+                             const std::vector<PartyID>& from_id) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         num_rounds += 1;
         thread_stopwatch::InstrumentBlock _ib("comm");
@@ -435,7 +439,7 @@ class MPICommunicator : public Communicator {
         std::vector<int> expected_recv_sources;
         std::vector<int> expected_recv_counts;
 
-        assert(shares.size() == to_id.size());
+        assert(shares.size() == destination.size());
         assert(received_shares.size() == from_id.size());
 
         size_t size_mul = 1;
@@ -443,8 +447,8 @@ class MPICommunicator : public Communicator {
             size_mul = 2;
         }
 
-        for (size_t i = 0; i < to_id.size(); ++i) {
-            int ind = (numParties + to_id[i] + this->currentId) % numParties;
+        for (size_t i = 0; i < destination.size(); ++i) {
+            int ind = (numParties + destination[i] + this->currentId) % numParties;
             send_requests.push_back(MPI_Request());
             assert(!shares[i].has_mapping());
 
@@ -478,46 +482,46 @@ class MPICommunicator : public Communicator {
             assert(recv_count == expected_recv_counts[i]);
         }
 
-        for (size_t i = 0; i < send_requests.size(); ++i) {
-            MPI_Wait(&send_requests[i], MPI_STATUS_IGNORE);
+        for (auto & send_request : send_requests) {
+            MPI_Wait(&send_request, MPI_STATUS_IGNORE);
         }
 #endif
     }
 
-    void exchangeShares(const std::vector<Vector<int8_t>> &shares,
-                        std::vector<Vector<int8_t>> &received_shares, std::vector<PartyID> to_id,
-                        std::vector<PartyID> from_id) override {
+    void exchangeShares(const std::vector<Vector<int8_t>>& shares,
+                        std::vector<Vector<int8_t>>& received_shares, const std::vector<PartyID> to_id,
+                        const std::vector<PartyID> from_id) override {
         exchangeShares_impl(shares, received_shares, to_id, from_id);
     }
 
     void exchangeShares(const std::vector<Vector<int16_t>> &shares,
-                        std::vector<Vector<int16_t>> &received_shares, std::vector<PartyID> to_id,
-                        std::vector<PartyID> from_id) override {
+                        std::vector<Vector<int16_t>> &received_shares, const std::vector<PartyID> to_id,
+                        const std::vector<PartyID> from_id) override {
         exchangeShares_impl(shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(const std::vector<Vector<int32_t>> &shares,
-                        std::vector<Vector<int32_t>> &received_shares, std::vector<PartyID> to_id,
-                        std::vector<PartyID> from_id) override {
+    void exchangeShares(const std::vector<Vector<int32_t>>& shares,
+                        std::vector<Vector<int32_t>>& received_shares, const std::vector<PartyID> to_id,
+                        const std::vector<PartyID> from_id) override {
         exchangeShares_impl(shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(const std::vector<Vector<int64_t>> &shares,
-                        std::vector<Vector<int64_t>> &received_shares, std::vector<PartyID> to_id,
-                        std::vector<PartyID> from_id) override {
+    void exchangeShares(const std::vector<Vector<int64_t>>& shares,
+                        std::vector<Vector<int64_t>>& received_shares, const std::vector<PartyID> to_id,
+                        const std::vector<PartyID> from_id) override {
         exchangeShares_impl(shares, received_shares, to_id, from_id);
     }
 
-    void exchangeShares(const std::vector<Vector<__int128_t>> &shares,
-                        std::vector<Vector<__int128_t>> &received_shares,
-                        std::vector<PartyID> to_id, std::vector<PartyID> from_id) override {
+    void exchangeShares(const std::vector<Vector<__int128_t>>& shares,
+                        std::vector<Vector<__int128_t>>& received_shares,
+                        const std::vector<PartyID> to_id, const std::vector<PartyID> from_id) override {
         exchangeShares_impl(shares, received_shares, to_id, from_id);
     }
 };
 
 class MPICommunicatorFactory : public CommunicatorFactory<MPICommunicatorFactory> {
    public:
-    MPICommunicatorFactory(CommFactoryArgs args)
+    explicit MPICommunicatorFactory(CommFactoryArgs args)
         : msgTag_(args.msgTag), host_prefix(args.host_prefix), setting_(args.setting) {
 #if defined(MPC_USE_MPI_COMMUNICATOR)
         int provided;
@@ -536,7 +540,7 @@ class MPICommunicatorFactory : public CommunicatorFactory<MPICommunicatorFactory
         this->latency = args.latency;
         this->bandwidth = args.bandwidth;
 
-        orq::benchmarking::stopwatch::partyID = partyId_;
+        stopwatch::partyID = partyId_;
     }
 
     std::unique_ptr<Communicator> create() {
@@ -555,22 +559,22 @@ class MPICommunicatorFactory : public CommunicatorFactory<MPICommunicatorFactory
 
     void start() {}
 
-    int getPartyId() const { return partyId_; }
+    [[nodiscard]] int getPartyId() const { return partyId_; }
 
-    int getNumParties() const { return numParties; }
+    [[nodiscard]] int getNumParties() const { return numParties; }
 
-    orq::service::Setting getSetting() const { return setting_; }
+    [[nodiscard]] service::Setting getSetting() const { return setting_; }
 
     void blockingReady() {
         // No implementation needed for MPI
     }
 
    private:
-    int partyId_;
+    int partyId_{};
     const int msgTag_;
-    int numParties;
+    int numParties{};
     const std::string host_prefix;
-    const orq::service::Setting setting_;
+    const service::Setting setting_;
 };
 
 }  // namespace orq
