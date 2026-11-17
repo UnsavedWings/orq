@@ -65,7 +65,7 @@ class Communicator {
     PartyID currentId;
 
     size_t bytes_sent = 0;
-    size_t num_rounds;
+    size_t num_rounds = 0;
 
     service::Setting setting_;
 
@@ -307,7 +307,6 @@ class Communicator {
      * @param received_shares
      * @param to_id relative ID of destination party
      * @param from_id relative ID of source party
-     * @param size
      */
     virtual void exchangeShares(Vector<int8_t> sent_shares, Vector<int8_t>& received_shares,
                                 PartyID to_id, PartyID from_id) = 0;
